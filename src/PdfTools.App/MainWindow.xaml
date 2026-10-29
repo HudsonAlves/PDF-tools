@@ -16,6 +16,12 @@
     <Window.InputBindings>
         <KeyBinding Gesture="Ctrl+O" Command="{Binding AddFilesCommand}" />
         <KeyBinding Gesture="Ctrl+S" Command="{Binding SaveCommand}" />
+        <KeyBinding Key="OemPlus" Modifiers="Ctrl" Command="{Binding ZoomInCommand}" />
+        <KeyBinding Key="Add" Modifiers="Ctrl" Command="{Binding ZoomInCommand}" />
+        <KeyBinding Key="OemMinus" Modifiers="Ctrl" Command="{Binding ZoomOutCommand}" />
+        <KeyBinding Key="Subtract" Modifiers="Ctrl" Command="{Binding ZoomOutCommand}" />
+        <KeyBinding Key="D0" Modifiers="Ctrl" Command="{Binding ResetZoomCommand}" />
+        <KeyBinding Key="NumPad0" Modifiers="Ctrl" Command="{Binding ResetZoomCommand}" />
     </Window.InputBindings>
 
     <Grid>
@@ -166,7 +172,10 @@
                              PreviewKeyDown="PageList_PreviewKeyDown"
                              DragOver="PageList_DragOver"
                              DragLeave="PageList_DragLeave"
-                             Drop="PageList_Drop">
+                             Drop="PageList_Drop"
+                             PreviewMouseWheel="PageList_PreviewMouseWheel"
+                             SizeChanged="PageList_SizeChanged"
+                             ScrollViewer.ScrollChanged="PageList_ScrollChanged">
                         <ListBox.ItemsPanel>
                             <ItemsPanelTemplate>
                                 <WrapPanel />
@@ -217,9 +226,9 @@
 
                         <ListBox.ItemTemplate>
                             <DataTemplate DataType="{x:Type vm:PageViewModel}">
-                                <StackPanel Width="{Binding DataContext.ThumbnailWidth, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                <StackPanel Width="{Binding DataContext.CardWidth, RelativeSource={RelativeSource AncestorType=ListBox}}"
                                             ToolTip="{Binding FilePath}">
-                                    <Grid Height="{Binding DataContext.ThumbnailHeight, RelativeSource={RelativeSource AncestorType=ListBox}}">
+                                    <Grid Height="{Binding DataContext.CardHeight, RelativeSource={RelativeSource AncestorType=ListBox}}">
                                         <!-- Page preview (white paper with shadow) -->
                                         <Border Background="White" HorizontalAlignment="Center" VerticalAlignment="Center"
                                                 BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}" BorderThickness="1">
@@ -295,12 +304,22 @@
         <!-- ===================== Status bar ===================== -->
         <DockPanel Grid.Row="2" Margin="24,10,24,12">
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                <TextBlock Style="{StaticResource IconText}" Text="&#xE71F;" FontSize="14"
-                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                <Slider Width="160" Margin="8,0" VerticalAlignment="Center"
-                        Minimum="100" Maximum="300" Value="{Binding ThumbnailWidth}" ToolTip="Thumbnail size" />
-                <TextBlock Style="{StaticResource IconText}" Text="&#xE8A3;" FontSize="14"
-                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                <Button Style="{StaticResource ZoomButton}" Command="{Binding ZoomOutCommand}" AutomationProperties.Name="Zoom out" ToolTip="Zoom out (Ctrl+−, Ctrl+scroll)">
+                    <TextBlock Style="{StaticResource IconText}" Text="&#xE71F;" FontSize="14" />
+                </Button>
+                <Slider Width="180" Margin="6,0" VerticalAlignment="Center"
+                        Minimum="{x:Static vm:MainViewModel.MinThumbnailWidth}"
+                        Maximum="{Binding MaxZoomWidth}"
+                        Value="{Binding ThumbnailWidth}" ToolTip="Thumbnail size" />
+                <Button Style="{StaticResource ZoomButton}" Command="{Binding ZoomInCommand}" AutomationProperties.Name="Zoom in" ToolTip="Zoom in (Ctrl+=, Ctrl+scroll)">
+                    <TextBlock Style="{StaticResource IconText}" Text="&#xE8A3;" FontSize="14" />
+                </Button>
+                <Button Style="{StaticResource ZoomButton}" Command="{Binding ResetZoomCommand}" AutomationProperties.Name="Reset zoom" MinWidth="52" Margin="4,0,0,0"
+                        ToolTip="Reset zoom (Ctrl+0)">
+                    <TextBlock VerticalAlignment="Center">
+                        <Run Text="{Binding ZoomPercent, Mode=OneWay}" />%
+                    </TextBlock>
+                </Button>
             </StackPanel>
             <ProgressBar DockPanel.Dock="Right" Width="120" Margin="0,0,20,0" IsIndeterminate="True" VerticalAlignment="Center"
                          Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisibility}}" />

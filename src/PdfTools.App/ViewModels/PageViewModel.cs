@@ -32,7 +32,11 @@ public sealed class PageViewModel : ObservableObject
 
     public bool ThumbnailFailed { get => _thumbnailFailed; set => SetProperty(ref _thumbnailFailed, value); }
 
-    internal bool ThumbnailRequested { get; set; }
+    /// <summary>Pixel width the current <see cref="Thumbnail"/> was rendered at (0 = not rendered yet).</summary>
+    internal int RenderedWidth { get; set; }
+
+    /// <summary>True while the card is on screen; visible cards are rendered first.</summary>
+    internal bool IsOnScreen { get; set; }
 
     public bool IsSelected { get => _isSelected; set => SetProperty(ref _isSelected, value); }
 

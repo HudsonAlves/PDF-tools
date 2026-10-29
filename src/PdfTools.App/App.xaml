@@ -23,6 +23,15 @@
                 <Setter Property="MinHeight" Value="34" />
             </Style>
 
+            <!-- Small borderless button used in the status bar (zoom controls). -->
+            <Style x:Key="ZoomButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                <Setter Property="Padding" Value="8,4" />
+                <Setter Property="MinHeight" Value="28" />
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+            </Style>
+
             <Style x:Key="AccentToolbarButton" TargetType="Button" BasedOn="{StaticResource AccentButtonStyle}">
                 <Setter Property="Margin" Value="4,0,0,0" />
                 <Setter Property="Padding" Value="14,6" />

@@ -21,7 +21,7 @@ In VS Code, press F5 (needs the C# Dev Kit extension).
 - **Sort** menu: original order, reverse, by file name, interleave files (front/back scans), odd-then-even.
 - **Remove** (Delete) drops selected pages; the × button clears everything. Ctrl+A selects all.
 - **Files panel**: hover a file and click × to remove all its pages.
-- **Zoom**: the slider at the bottom right resizes the thumbnails.
+- **Zoom**: −/+ buttons or slider at the bottom right, Ctrl+scroll wheel, Ctrl+= / Ctrl+−; click the % (or Ctrl+0) to reset. Maximum zoom fits one page to the width. Previews are re-rendered at higher resolution as you zoom in (visible pages first), so text stays sharp.
 - **Save PDF** (Ctrl+S) writes the pages, in the shown order, to a new PDF.
 
 ## Project layout

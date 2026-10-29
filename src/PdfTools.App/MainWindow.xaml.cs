@@ -24,6 +24,40 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         DataContext = _vm = viewModel;
+        Loaded += (_, _) => _vm.RenderScale = VisualTreeHelper.GetDpi(this).DpiScaleX;
+        DpiChanged += (_, e) => _vm.RenderScale = e.NewDpi.DpiScaleX;
+    }
+
+    // ---- Zoom & preview quality ---------------------------------------------------
+
+    private void PageList_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (!Keyboard.Modifiers.HasFlag(ModifierKeys.Control)) return;
+
+        var command = e.Delta > 0 ? _vm.ZoomInCommand : _vm.ZoomOutCommand;
+        if (command.CanExecute(null)) command.Execute(null);
+        e.Handled = true;
+    }
+
+    private void PageList_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        // Room for one card: list width minus list padding, item margin, card padding/border and the scrollbar.
+        var chrome = 16 + 12 + 20 + SystemParameters.VerticalScrollBarWidth;
+        _vm.AvailableWidth = PageList.ActualWidth - chrome;
+    }
+
+    /// <summary>Tells the view model which cards are visible so their previews are sharpened first.</summary>
+    private void PageList_ScrollChanged(object sender, ScrollChangedEventArgs e)
+    {
+        var viewport = new Rect(0, 0, PageList.ActualWidth, PageList.ActualHeight);
+        var onScreen = new HashSet<PageViewModel>();
+        foreach (var page in _vm.Pages)
+        {
+            if (PageList.ItemContainerGenerator.ContainerFromItem(page) is not ListBoxItem { IsVisible: true } item) continue;
+            var bounds = item.TransformToAncestor(PageList).TransformBounds(new Rect(item.RenderSize));
+            if (bounds.IntersectsWith(viewport)) onScreen.Add(page);
+        }
+        _vm.SetOnScreenPages(onScreen);
     }
 
     // ---- Sort menu ------------------------------------------------------------

@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.IO;
 using System.Windows.Input;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using PdfTools.App.Mvvm;
 using PdfTools.App.Services;
 using PdfTools.Core;
@@ -18,9 +19,20 @@ namespace PdfTools.App.ViewModels;
 /// </summary>
 public sealed class MainViewModel : ObservableObject
 {
-    // Thumbnails are rendered at this size (px) and scaled down by the UI, so they stay sharp when zoomed.
-    private const int RenderWidth = 300;
-    private const int RenderHeight = 400;
+    // Card width limits (device-independent units) for the zoom slider/buttons.
+    public const double MinThumbnailWidth = 100;
+    public const double MaxThumbnailWidth = 1000;
+    public const double DefaultThumbnailWidth = 150;
+    private const double ZoomStep = 1.25;
+
+    // Page previews use a 3:4 box (portrait A4/Letter fit nicely; landscape pages letterbox).
+    private const double PreviewAspect = 4.0 / 3.0;
+
+    // Render resolution follows the zoom in steps of this many pixels, so small zoom
+    // changes don't trigger re-rendering. Capped to keep memory reasonable.
+    private const int RenderStep = 200;
+    private const int MinRenderWidth = 300;
+    private const int MaxRenderWidth = 2400;
 
     private readonly PageCollection _collection = new();
     private readonly IPdfReader _reader;
@@ -30,8 +42,11 @@ public sealed class MainViewModel : ObservableObject
 
     private string _statusText = "";
     private bool _isBusy;
-    private double _thumbnailWidth = 150;
+    private double _thumbnailWidth = DefaultThumbnailWidth;
+    private double _renderScale = 1;
+    private double _availableWidth = double.MaxValue;
     private bool _loadingThumbnails;
+    private readonly DispatcherTimer _rerenderDelay = new() { Interval = TimeSpan.FromMilliseconds(250) };
 
     public MainViewModel(IPdfReader reader, IPdfWriter writer, IPageRenderer renderer, IDialogService dialogs)
     {
@@ -49,6 +64,15 @@ public sealed class MainViewModel : ObservableObject
         SortCommand = new RelayCommand(p => Run(() => _collection.Sort((IPageSorter)p!)), _ => HasPages);
         RemoveSourceCommand = new RelayCommand(p => RemoveSource((PdfSourceFile)p!));
         SelectAllCommand = new RelayCommand(() => SetSelection(_ => true), () => HasPages);
+        ZoomInCommand = new RelayCommand(ZoomIn, () => ThumbnailWidth < MaxZoomWidth);
+        ZoomOutCommand = new RelayCommand(ZoomOut, () => ThumbnailWidth > MinThumbnailWidth);
+        ResetZoomCommand = new RelayCommand(() => ThumbnailWidth = DefaultThumbnailWidth);
+
+        _rerenderDelay.Tick += (_, _) =>
+        {
+            _rerenderDelay.Stop();
+            _ = LoadThumbnailsAsync();
+        };
 
         _collection.Changed += (_, _) => SyncFromCollection();
         UpdateStatus();
@@ -69,6 +93,9 @@ public sealed class MainViewModel : ObservableObject
     public ICommand SortCommand { get; }
     public ICommand RemoveSourceCommand { get; }
     public ICommand SelectAllCommand { get; }
+    public ICommand ZoomInCommand { get; }
+    public ICommand ZoomOutCommand { get; }
+    public ICommand ResetZoomCommand { get; }
 
     public bool HasPages => Pages.Count > 0;
 
@@ -86,11 +113,50 @@ public sealed class MainViewModel : ObservableObject
         get => _thumbnailWidth;
         set
         {
-            if (SetProperty(ref _thumbnailWidth, value)) OnPropertyChanged(nameof(ThumbnailHeight));
+            if (!SetProperty(ref _thumbnailWidth, Math.Clamp(value, MinThumbnailWidth, MaxThumbnailWidth))) return;
+            OnCardSizeChanged();
         }
     }
 
-    public double ThumbnailHeight => ThumbnailWidth * RenderHeight / RenderWidth;
+    /// <summary>Width the page grid has for one card; set by the view when it resizes.</summary>
+    public double AvailableWidth
+    {
+        get => _availableWidth;
+        set
+        {
+            if (SetProperty(ref _availableWidth, Math.Max(MinThumbnailWidth, value))) OnCardSizeChanged();
+        }
+    }
+
+    /// <summary>Actual card size: the zoom level, but never wider than the grid.</summary>
+    public double CardWidth => Math.Min(ThumbnailWidth, AvailableWidth);
+
+    public double CardHeight => CardWidth * PreviewAspect;
+
+    private void OnCardSizeChanged()
+    {
+        OnPropertyChanged(nameof(CardWidth));
+        OnPropertyChanged(nameof(CardHeight));
+        OnPropertyChanged(nameof(ZoomPercent));
+        OnPropertyChanged(nameof(MaxZoomWidth));
+        ScheduleRerender();
+    }
+
+    /// <summary>Zoom level shown in the status bar (100% = default card size).</summary>
+    public int ZoomPercent => (int)Math.Round(CardWidth / DefaultThumbnailWidth * 100);
+
+    /// <summary>Largest useful zoom: one page filling the grid width (bound to the slider maximum).</summary>
+    public double MaxZoomWidth => Math.Max(MinThumbnailWidth, Math.Min(MaxThumbnailWidth, AvailableWidth));
+
+    /// <summary>Screen DPI scale (1.0 = 96 DPI), set by the view so previews match physical pixels.</summary>
+    public double RenderScale
+    {
+        get => _renderScale;
+        set
+        {
+            if (SetProperty(ref _renderScale, value)) ScheduleRerender();
+        }
+    }
 
     // ---- Actions called by the view (drag & drop) or by commands ------------
 
@@ -116,6 +182,12 @@ public sealed class MainViewModel : ObservableObject
     }
 
     public void MovePages(IReadOnlyList<PageItem> pages, int targetIndex) => _collection.MovePages(pages, targetIndex);
+
+    /// <summary>Called by the view on scroll/resize so on-screen cards get sharp previews first.</summary>
+    public void SetOnScreenPages(IReadOnlySet<PageViewModel> onScreen)
+    {
+        foreach (var page in Pages) page.IsOnScreen = onScreen.Contains(page);
+    }
 
     /// <summary>Call when selection changes in the view so status and commands refresh.</summary>
     public void OnSelectionChanged()
@@ -163,6 +235,11 @@ public sealed class MainViewModel : ObservableObject
         OnSelectionChanged();
     }
 
+    private void ZoomIn() => ThumbnailWidth = Math.Min(MaxZoomWidth, ThumbnailWidth * ZoomStep);
+
+    // Start from the visible size, so zooming out after a window shrink responds immediately.
+    private void ZoomOut() => ThumbnailWidth = Math.Max(MinThumbnailWidth, CardWidth / ZoomStep);
+
     private void Run(Action action)
     {
         try { action(); }
@@ -203,20 +280,55 @@ public sealed class MainViewModel : ObservableObject
         _ = LoadThumbnailsAsync();
     }
 
-    /// <summary>Renders missing thumbnails one at a time in the background.</summary>
+    /// <summary>Pixel width previews should have at the current zoom and DPI.</summary>
+    private int TargetRenderWidth
+    {
+        get
+        {
+            var pixels = CardWidth * RenderScale;
+            var stepped = (int)Math.Ceiling(pixels / RenderStep) * RenderStep;
+            return Math.Clamp(stepped, MinRenderWidth, MaxRenderWidth);
+        }
+    }
+
+    /// <summary>
+    /// A preview needs (re)rendering when it is missing, too blurry for the current zoom,
+    /// or much larger than needed (re-rendered smaller to free memory after zooming out).
+    /// </summary>
+    private bool NeedsRender(PageViewModel vm, int target) =>
+        !vm.ThumbnailFailed && (vm.RenderedWidth < target || vm.RenderedWidth > target * 2);
+
+    private void ScheduleRerender()
+    {
+        // Wait until the zoom stops changing (slider drag) before re-rendering.
+        _rerenderDelay.Stop();
+        _rerenderDelay.Start();
+    }
+
+    /// <summary>
+    /// Renders previews one at a time in the background, on-screen cards first.
+    /// The old preview stays visible until the sharper one is ready.
+    /// </summary>
     private async Task LoadThumbnailsAsync()
     {
         if (_loadingThumbnails) return;
         _loadingThumbnails = true;
         try
         {
-            while (Pages.FirstOrDefault(p => !p.ThumbnailRequested) is { } vm)
+            while (true)
             {
-                vm.ThumbnailRequested = true;
+                var target = TargetRenderWidth; // re-read each time: zoom may change mid-loop
+                var vm = Pages.Where(p => NeedsRender(p, target))
+                              .OrderByDescending(p => p.IsOnScreen)
+                              .FirstOrDefault();
+                if (vm is null) break;
+
                 try
                 {
-                    var png = await Task.Run(() => _renderer.RenderPng(vm.Page, RenderWidth, RenderHeight));
+                    var height = (int)(target * PreviewAspect);
+                    var png = await Task.Run(() => _renderer.RenderPng(vm.Page, target, height));
                     vm.Thumbnail = ToImage(png);
+                    vm.RenderedWidth = target;
                 }
                 catch
                 {
