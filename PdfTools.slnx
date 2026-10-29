@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/PdfTools.App/PdfTools.App.csproj" />
+    <Project Path="src/PdfTools.Core/PdfTools.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/PdfTools.Tests/PdfTools.Tests.csproj" />
+  </Folder>
+</Solution>
